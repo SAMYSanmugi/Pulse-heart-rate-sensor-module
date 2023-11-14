@@ -1,0 +1,189 @@
+#include <Arduino.h>
+#include <Arduino.h>
+#include <virtuabotixRTC.h> //RTC
+#include <Wire.h>
+#include <Adafruit_GFX.h> //OLED
+#include <Adafruit_SSD1306.h> //OLED
+#include <EEPROM.h> //MEMOIRE ARDUINO NON VOLATILE
+int valeur =0;
+
+
+const int capteur = A0;
+
+// Creation RTC
+virtuabotixRTC myRTC(5, 4, 2);//CLK,DAT,RST
+
+// Creation de l'écran
+#define SCREEN_WIDTH 128 // Largeur de l'écran
+#define SCREEN_HEIGHT 64 // Hauteur de l'écran
+int valeurs[SCREEN_WIDTH];
+
+Adafruit_SSD1306 display1(-1);
+Adafruit_SSD1306 display2(-1);
+
+//Changer ecran
+int Bouton = 3; //2 ou 3 pour interruption
+boolean etat_bouton=true;
+
+//Echelle de temps
+int Potentiometre = A1;
+int Valeur = 0;
+int Percent = 0;
+
+//Memoire pour graphe 
+int circularBuffer[SCREEN_WIDTH]; //fast way to store values 
+int curWriteIndex = 0; // tracks where we are in the circular buffer
+
+int Moyenne=0;
+int Compteur=0;
+int AffichageTest =0;
+
+struct DateHeure {
+  int jour;
+  int mois;
+  int annee;
+
+  int heure;
+  int min;
+  int sec;
+};
+
+
+void drawLine();
+/*
+ * Dessiner la ligne à la position de x et la analogval
+ */
+void drawLine(int xPos, int analogVal){
+  int lineHeight = map(analogVal, 0, 1023, 0, 63); //(val,)
+  int yPos = display2.height() - lineHeight;
+  display2.drawPixel(xPos, yPos,SSD1306_WHITE);
+}
+
+int trouverMax(int tableau[], int taille) {
+  int maxVal = tableau[0];
+  for (int i = 1; i < taille; i++) {
+    if (tableau[i] > maxVal) {
+      maxVal = tableau[i];
+    }
+  }
+  return maxVal;
+}
+int trouverMin(int tableau[], int taille) {
+  int minVal = tableau[0];
+  for (int i = 1; i < taille; i++) {
+    if (tableau[i] < minVal) {
+      minVal = tableau[i];
+    }
+  }
+  return minVal;
+}
+
+void setup()  {
+  
+  // Paramètrage de l'horloge 
+  // secondes, minutes, heures, nb jour de la semaine, jour, mois, année
+  //myRTC.setDS1302Time(15, 26, 14, 7, 02, 11, 2023);
+  
+  display2.begin(SSD1306_SWITCHCAPVCC,0x3D);//adresse ecran 2
+  delay(2000);
+  display1.setTextSize(1);
+  display1.setTextColor(WHITE);
+  display2.setTextSize(1);
+  display2.setTextColor(WHITE);
+
+  pinMode(Bouton,INPUT);
+
+  //Potentiometre
+  pinMode(Potentiometre,INPUT);
+    Serial.begin(9600);
+
+  if (!display2.begin(SSD1306_SWITCHCAPVCC, 0x3D)) {
+    Serial.println(F("SSD1306 allocation failed"));
+    for (;;);
+  }
+
+  display2.display();
+  delay(2000);
+  display2.clearDisplay();
+  
+  
+}
+
+void loop()  {
+  // This allows for the update of variables for time or accessing the individual elements.
+  myRTC.updateTime();
+  
+  //Potentiometre
+ 
+    //graduation * % 
+    //zoom  valeur*1.5  
+
+  //Ecran 1
+ 
+
+  //Ecran 2
+  
+   Valeur=analogRead(Potentiometre); //Lire la valeur analogiaue sur A0 (Potentiometre)
+  Percent=map(Valeur,0,1023,0,100);//Convertir en une valeur entre 0 et 100
+    //échelle
+    
+  if (Percent >= 50){
+    display2.clearDisplay();
+    
+    
+    for (int i=0;i<SCREEN_WIDTH+1;i+=32){ //graduation horizontale
+      display2.drawLine(i,15,i,17,SSD1306_WHITE);
+    }
+    for (int j=0;j<SCREEN_HEIGHT+1;j+=16){ //graduation verticale
+      display2.drawLine(63,j,65,j,SSD1306_WHITE);
+    }
+  }
+  if (Percent < 50){
+    display2.clearDisplay();
+    for (int i=0;i<SCREEN_WIDTH+1;i+=16){
+      display2.drawLine(i,15,i,17,SSD1306_WHITE);
+    }
+    for (int j=0;j<SCREEN_HEIGHT+1;j+=8){
+      display2.drawLine(63,j,65,j,SSD1306_WHITE);
+    }
+  }
+  
+  // Lecture des valeurs du capteur analogique et stockage dans le tableau
+  for (int i = 0; i < SCREEN_WIDTH; i++) {
+    valeurs[i] = analogRead(capteur);
+    delay(10);
+  }
+  
+
+  
+
+  // Trouver la valeur maximale et minimale dans le tableau
+  int maxVal = trouverMax(valeurs, SCREEN_WIDTH);
+  int minVal = trouverMin(valeurs, SCREEN_WIDTH);
+
+  // Ajouter une marge supérieure et inférieure pour ajuster la taille du graphique
+  int margin = 20;
+  maxVal += margin;
+  minVal -= margin;
+
+  // Calculer la correction verticale pour centrer le graphe
+  int verticalCorrection = (SCREEN_HEIGHT - map(maxVal, minVal, maxVal, 0, SCREEN_HEIGHT)) / 2;
+
+  // Tracer le graphe des valeurs centré sur l'écran
+  for (int i = 1; i < SCREEN_WIDTH; i++) {
+    int x0 = map(i - 1, 0, SCREEN_WIDTH - 1, 0, SCREEN_WIDTH);
+    int y0 = (SCREEN_HEIGHT - map(valeurs[i - 1], minVal, maxVal, 0, SCREEN_HEIGHT)) / 2;
+
+    int x1 = map(i, 0, SCREEN_WIDTH - 1, 0, SCREEN_WIDTH);
+    int y1 = (SCREEN_HEIGHT - map(valeurs[i], minVal, maxVal, 0, SCREEN_HEIGHT)) / 2;
+
+    display2.drawLine(x0, y0 + verticalCorrection, x1, y1 + verticalCorrection, SSD1306_WHITE);
+  }
+  int centerY = SCREEN_HEIGHT / 2;
+    display2.drawLine(0, centerY, SCREEN_WIDTH, centerY, SSD1306_WHITE);
+  int centerX = SCREEN_WIDTH / 2;
+    display2.drawLine(centerX, 0, centerX, SCREEN_HEIGHT, SSD1306_WHITE);
+
+
+  display2.display();
+  delay(500);
